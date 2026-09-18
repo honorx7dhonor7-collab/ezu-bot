@@ -13,19 +13,18 @@ DATA = {}
 
 def load():
     if os.path.exists(DB):
-        with open(DB, 'r') as f:
+        with open(DB) as f:
             return json.load(f)
     return {}
 
 def save(d):
     with open(DB, 'w') as f:
-        json.dump(f, d)
+        json.dump(d, f)
 
 def can(uid):
     if int(uid) == OWNER_ID:
         return True
-    db = load()
-    return db.get(str(uid), 0) < 3
+    return load().get(str(uid), 0) < 3
 
 def use(uid):
     if int(uid) == OWNER_ID:
@@ -35,40 +34,42 @@ def use(uid):
     save(db)
 
 @app.route('/')
-def h():
+def home():
     return "Alive"
 
 @bot.message_handler(commands=['start'])
 def start(m):
     DATA[m.from_user.id] = {'step': 1}
+    used = load().get(str(m.from_user.id), 0)
+    left = 3 - used
     if m.from_user.id == OWNER_ID:
-        left = "Cheksiz! Xo'jayin"
+        txt_left = "Sizda cheksiz!"
     else:
-        used = load().get(str(m.from_user.id), 0)
-        left = f"Sizda {3-used} ta bepul urinish qoldi"
-    text = f"Salom! \n\nMen O'g'iloy Mamasidiqova tomonidan yaratildim!\n\nMen buyumlar, mevalar, hayvonlar va mult obrazdagi odamlarning tayyor rasmini jonlantirib, gapirtirib beraman!\n\nMenga tayyor rasm jo'nating!\n\n{left}"
-    bot.send_message(m.chat.id, text)
+        txt_left = "Sizda " + str(left) + " ta bepul urinish qoldi"
+    msg = "Salom!\n\nMen O'g'iloy Mamasidiqova tomonidan yaratildim!\n\nMen buyumlar, mevalar, hayvonlar va mult obrazdagi odamlarning tayyor rasmini jonlantirib, gapirtirib beraman!\n\nMenga tayyor rasm jo'nating!\n\n" + txt_left
+    bot.send_message(m.chat.id, msg)
 
 @bot.message_handler(content_types=['photo'])
 def photo_handler(m):
     if not can(m.from_user.id):
-        bot.send_message(m.chat.id, "Bepul urinishlar tugadi! Tolov uchun @eeuuzzo ga yozing!")
+        bot.send_message(m.chat.id, "Bepul urinishlar tugadi! @eeuuzzo ga yozing")
         return
-    DATA[m.from_user.id] = {'photo': m.photo[-1].file_id, 'step': 2}
+    DATA[m.from_user.id] = {}
+    DATA[m.from_user.id]['photo'] = m.photo[-1].file_id
+    DATA[m.from_user.id]['step'] = 2
     bot.send_message(m.chat.id, "Qabul qildim! Endi rasm nima desin? Matn yozing!")
 
 @bot.message_handler(content_types=['text'])
 def text_handler(m):
     if m.text.startswith('/'):
         return
-    if m.from_user.id not in DATA:
-        bot.send_message(m.chat.id, "Avval tayyor rasm jo'nating!")
+    uid = m.from_user.id
+    if uid not in DATA:
         return
-    if DATA[m.from_user.id].get('step') != 2:
-        bot.send_message(m.chat.id, "Avval tayyor rasm jo'nating!")
+    if DATA[uid].get('step')!= 2:
         return
-    DATA[m.from_user.id]['text'] = m.text
-    DATA[m.from_user.id]['step'] = 3
+    DATA[uid]['text'] = m.text
+    DATA[uid]['step'] = 3
     kb = telebot.types.InlineKeyboardMarkup(row_width=3)
     kb.add(
         telebot.types.InlineKeyboardButton("9:16", callback_data="9:16"),
@@ -80,10 +81,7 @@ def text_handler(m):
 @bot.callback_query_handler(func=lambda c: True)
 def callback_handler(c):
     d = c.data
-    if c.from_user.id not in DATA:
+    uid = c.from_user.id
+    if uid not in DATA:
         return
-    if d == "9:16" or d == "16:9" or d == "1:1":
-        DATA[c.from_user.id]['format'] = d
-        kb = telebot.types.InlineKeyboardMarkup()
-        kb.add(telebot.types.InlineKeyboardButton("VIDEO GENERATSIYA", callback_data="generate"))
-        bot.edit_message_text(f"{d} tanlandi! Tayyor bo'lsangiz bosing!", c.message.chat
+    if d == "9:16" or d == "16
