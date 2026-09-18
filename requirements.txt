@@ -1,3 +1,7 @@
-pyTelegramBotAPI==4.14.0
-requests
-flask
+pyTelegramBotAPI
+Flask
+Pillow
+numpy
+imageio
+imageio-ffmpeg
+gTTS
