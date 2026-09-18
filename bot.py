@@ -1,37 +1,12 @@
 import os, telebot, threading, time, io, json
 from flask import Flask
-from PIL import Image, ImageDraw
+from PIL import Image
 import numpy as np, imageio
-from gtts import gTTS
 
 TOKEN = os.environ.get("BOT_TOKEN")
-OWNER_ID = 8481826465
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
-DB = "/tmp/db.json"
 DATA = {}
-
-def load():
-    if os.path.exists(DB):
-        with open(DB) as f:
-            return json.load(f)
-    return {}
-
-def save(d):
-    with open(DB, 'w') as f:
-        json.dump(d, f)
-
-def can(uid):
-    if int(uid) == OWNER_ID:
-        return True
-    return load().get(str(uid), 0) < 3
-
-def use(uid):
-    if int(uid) == OWNER_ID:
-        return
-    db = load()
-    db[str(uid)] = db.get(str(uid), 0) + 1
-    save(db)
 
 @app.route('/')
 def home():
@@ -39,49 +14,84 @@ def home():
 
 @bot.message_handler(commands=['start'])
 def start(m):
-    DATA[m.from_user.id] = {'step': 1}
-    used = load().get(str(m.from_user.id), 0)
-    left = 3 - used
-    if m.from_user.id == OWNER_ID:
-        txt_left = "Sizda cheksiz!"
-    else:
-        txt_left = "Sizda " + str(left) + " ta bepul urinish qoldi"
-    msg = "Salom!\n\nMen O'g'iloy Mamasidiqova tomonidan yaratildim!\n\nMen buyumlar, mevalar, hayvonlar va mult obrazdagi odamlarning tayyor rasmini jonlantirib, gapirtirib beraman!\n\nMenga tayyor rasm jo'nating!\n\n" + txt_left
+    DATA[m.from_user.id] = {'step':1}
+    msg = "Salom!\n\nMen Ogiloy Mamasidiqova tomonidan yaratildim!\n\nMen buyumlar, mevalar, hayvonlar va mult obrazdagi odamlarning tayyor rasmini jonlantirib beraman!\n\nMenga tayyor rasm jonating!"
     bot.send_message(m.chat.id, msg)
 
 @bot.message_handler(content_types=['photo'])
-def photo_handler(m):
-    if not can(m.from_user.id):
-        bot.send_message(m.chat.id, "Bepul urinishlar tugadi! @eeuuzzo ga yozing")
-        return
-    DATA[m.from_user.id] = {}
-    DATA[m.from_user.id]['photo'] = m.photo[-1].file_id
-    DATA[m.from_user.id]['step'] = 2
-    bot.send_message(m.chat.id, "Qabul qildim! Endi rasm nima desin? Matn yozing!")
+def ph(m):
+    DATA[m.from_user.id] = {'photo': m.photo[-1].file_id, 'step':2}
+    bot.send_message(m.chat.id, "Qabul qildim! Endi rasm nima desin? Yozing!")
 
 @bot.message_handler(content_types=['text'])
-def text_handler(m):
+def tx(m):
     if m.text.startswith('/'):
         return
-    uid = m.from_user.id
-    if uid not in DATA:
+    if m.from_user.id not in DATA:
         return
-    if DATA[uid].get('step')!= 2:
+    if DATA[m.from_user.id].get('step')!= 2:
         return
-    DATA[uid]['text'] = m.text
-    DATA[uid]['step'] = 3
-    kb = telebot.types.InlineKeyboardMarkup(row_width=3)
-    kb.add(
-        telebot.types.InlineKeyboardButton("9:16", callback_data="9:16"),
-        telebot.types.InlineKeyboardButton("16:9", callback_data="16:9"),
-        telebot.types.InlineKeyboardButton("1:1", callback_data="1:1")
-    )
+    DATA[m.from_user.id]['text'] = m.text
+    DATA[m.from_user.id]['step'] = 3
+    kb = telebot.types.InlineKeyboardMarkup()
+    kb.add(telebot.types.InlineKeyboardButton("9:16", callback_data="9:16"))
+    kb.add(telebot.types.InlineKeyboardButton("16:9", callback_data="16:9"))
+    kb.add(telebot.types.InlineKeyboardButton("1:1", callback_data="1:1"))
     bot.send_message(m.chat.id, "Format tanlang!", reply_markup=kb)
 
 @bot.callback_query_handler(func=lambda c: True)
-def callback_handler(c):
+def cb(c):
     d = c.data
     uid = c.from_user.id
     if uid not in DATA:
         return
-    if d == "9:16" or d == "16
+    if d == "9:16" or d == "16:9" or d == "1:1":
+        DATA[uid]['format'] = d
+        kb = telebot.types.InlineKeyboardMarkup()
+        kb.add(telebot.types.InlineKeyboardButton("VIDEO", callback_data="go"))
+        bot.edit_message_text("Tanlandi: " + d, c.message.chat.id, c.message.message_id, reply_markup=kb)
+    if d == "go":
+        info = DATA.get(uid)
+        bot.edit_message_text("Jonlantiryapman...", c.message.chat.id, c.message.message_id)
+        try:
+            f = bot.get_file(info['photo'])
+            data = bot.download_file(f.file_path)
+            base = Image.open(io.BytesIO(data)).convert("RGB")
+            fmt = info['format']
+            if fmt == "9:16":
+                w = 720
+                h = 1280
+            elif fmt == "16:9":
+                w = 1280
+                h = 720
+            else:
+                w = 720
+                h = 720
+            base = base.resize((w, h))
+            writer = imageio.get_writer("/tmp/out.mp4", fps=12, macro_block_size=1)
+            for i in range(60):
+                zoom = 1 + 0.03 * np.sin(i * 0.2)
+                nw = int(w * zoom)
+                nh = int(h * zoom)
+                tmp = base.resize((nw, nh))
+                l = (nw - w) // 2
+                t = (nh - h) // 2
+                fr = tmp.crop((l, t, l+w, t+h))
+                writer.append_data(np.array(fr))
+            writer.close()
+            with open("/tmp/out.mp4", 'rb') as v:
+                bot.send_video(c.message.chat.id, v, caption="Tayyor!")
+            DATA.pop(uid, None)
+        except Exception as e:
+            bot.send_message(c.message.chat.id, "Xato: " + str(e))
+
+def run():
+    time.sleep(2)
+    bot.remove_webhook()
+    bot.infinity_polling(skip_pending=True)
+
+threading.Thread(target=run, daemon=True).start()
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
