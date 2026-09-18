@@ -11,17 +11,29 @@ app = Flask(__name__)
 DB="/tmp/db.json"
 DATA={}
 
-def load(): return json.load(open(DB)) if os.path.exists(DB) else {}
-def save(d): json.dump(d, open(DB,'w'))
+def load():
+    if os.path.exists(DB):
+        return json.load(open(DB))
+    return {}
+
+def save(d):
+    json.dump(d, open(DB,'w'))
+
 def can(uid):
-    if int(uid)==OWNER_ID: return True
+    if int(uid)==OWNER_ID:
+        return True
     return load().get(str(uid),0) < 3
+
 def use(uid):
-    if int(uid)==OWNER_ID: return
-    db=load(); db[str(uid)]=db.get(str(uid),0)+1; save(db)
+    if int(uid)==OWNER_ID:
+        return
+    db=load()
+    db[str(uid)]=db.get(str(uid),0)+1
+    save(db)
 
 @app.route('/')
-def h(): return "Alive"
+def h():
+    return "Alive"
 
 @bot.message_handler(commands=['start'])
 def start(m):
@@ -44,7 +56,7 @@ Menga tayyor rasm jo'nating! 📸
 @bot.message_handler(content_types=['photo'])
 def p(m):
     if not can(m.from_user.id):
-        bot.send_message(m.chat.id, f"""😔 Bepul urinishlar tugadi!
+        bot.send_message(m.chat.id, """😔 Bepul urinishlar tugadi!
 
 💰 Narxlar:
 🎬 1 ta video - 5 000 so'm
@@ -58,10 +70,13 @@ To'lov uchun 👉 @eeuuzzo ga yozing!""")
 
 @bot.message_handler(content_types=['text'])
 def t(m):
-    if m.text.startswith('/'): return
+    if m.text.startswith('/'):
+        return
     if m.from_user.id not in DATA or DATA[m.from_user.id].get('step')!=2:
-        bot.send_message(m.chat.id, "Avval tayyor rasm jo'nating! 1️⃣"); return
-    DATA[m.from_user.id]['text']=m.text; DATA[m.from_user.id]['step']=3
+        bot.send_message(m.chat.id, "Avval tayyor rasm jo'nating! 1️⃣")
+        return
+    DATA[m.from_user.id]['text']=m.text
+    DATA[m.from_user.id]['step']=3
     kb=telebot.types.InlineKeyboardMarkup(row_width=3)
     kb.add(
         telebot.types.InlineKeyboardButton("📱 9:16", callback_data="9:16"),
@@ -73,4 +88,35 @@ def t(m):
 @bot.callback_query_handler(func=lambda c: True)
 def cb(c):
     d=c.data
-    if c.from_user.id
+    if c.from_user.id not in DATA:
+        return
+    if d in ["9:16","16:9","1:1"]:
+        DATA[c.from_user.id]['format']=d
+        kb=telebot.types.InlineKeyboardMarkup()
+        kb.add(telebot.types.InlineKeyboardButton("🎥 VIDEO GENERATSIYA", callback_data="generate"))
+        bot.edit_message_text(f"✅ {d} tanlandi!\n\n4️⃣ Tayyor bo'lsangiz bosing! 👇", c.message.chat.id, c.message.message_id, reply_markup=kb)
+    elif d=="generate":
+        info=DATA.get(c.from_user.id)
+        bot.edit_message_text("⏳ Jonlantiryapman... 🎬✨", c.message.chat.id, c.message.message_id)
+        try:
+            f=bot.get_file(info['photo'])
+            base=Image.open(io.BytesIO(bot.download_file(f.file_path))).convert("RGB")
+            fmt=info['format']
+            txt=info['text']
+            if fmt=="9:16":
+                w,h=720,1280
+            elif fmt=="16:9":
+                w,h=1280,720
+            else:
+                w,h=720,720
+            try:
+                gTTS(txt, lang='uz').save("/tmp/v.mp3")
+                has_voice=True
+            except:
+                has_voice=False
+            dur=max(5, min(25, len(txt)*0.15))
+            frames=int(dur*12)
+            writer=imageio.get_writer("/tmp/out.mp4", fps=12, macro_block_size=1)
+            for i in range(frames):
+                z=1+0.05*np.sin(i*0.25)
+                nw,nh=int(w*z),int(h*z)
